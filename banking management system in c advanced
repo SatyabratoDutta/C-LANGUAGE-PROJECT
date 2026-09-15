@@ -1,0 +1,791 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define ACCOUNT_FILE "accounts.dat"
+#define TRANSACTION_FILE "transactions.dat"
+
+#define ADMIN_USER "admin"
+#define ADMIN_PASS "admin123"
+
+struct Account {
+    int accountNo;
+    char name[50];
+    char phone[15];
+    char address[100];
+    char accountType[20];
+    int pin;
+    double balance;
+    int active;
+};
+
+struct Transaction {
+    int accountNo;
+    char type[20];
+    double amount;
+    double balance;
+    char dateTime[30];
+    int relatedAccount;
+};
+
+/* Function declarations */
+void adminLogin();
+void mainMenu();
+void createAccount();
+void displayAllAccounts();
+void searchAccount();
+void depositMoney();
+void withdrawMoney();
+void transferMoney();
+void checkBalance();
+void transactionHistory();
+void updateAccount();
+void deleteAccount();
+
+int getAccount(int accountNo, struct Account *acc);
+void saveAccount(struct Account acc);
+void updateAccountFile(struct Account updated);
+void recordTransaction(int accNo, char type[], double amount,
+                       double balance, int relatedAccount);
+int customerLogin(int *accountNo);
+void customerMenu(int accountNo);
+
+void clearInput() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+/* Generate date and time */
+void getDateTime(char *buffer) {
+    time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+
+    strftime(buffer, 30, "%d-%m-%Y %H:%M:%S", tm_info);
+}
+
+/* Find account */
+int getAccount(int accountNo, struct Account *acc) {
+    FILE *fp = fopen(ACCOUNT_FILE, "rb");
+
+    if (fp == NULL)
+        return 0;
+
+    while (fread(acc, sizeof(struct Account), 1, fp)) {
+        if (acc->accountNo == accountNo && acc->active == 1) {
+            fclose(fp);
+            return 1;
+        }
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+/* Save new account */
+void saveAccount(struct Account acc) {
+    FILE *fp = fopen(ACCOUNT_FILE, "ab");
+
+    if (fp == NULL) {
+        printf("\nFile error!\n");
+        return;
+    }
+
+    fwrite(&acc, sizeof(struct Account), 1, fp);
+    fclose(fp);
+}
+
+/* Update account in file */
+void updateAccountFile(struct Account updated) {
+    FILE *fp = fopen(ACCOUNT_FILE, "rb+");
+    struct Account temp;
+
+    if (fp == NULL)
+        return;
+
+    while (fread(&temp, sizeof(struct Account), 1, fp)) {
+
+        if (temp.accountNo == updated.accountNo) {
+
+            fseek(fp, -(long)sizeof(struct Account), SEEK_CUR);
+
+            fwrite(&updated, sizeof(struct Account), 1, fp);
+
+            break;
+        }
+    }
+
+    fclose(fp);
+}
+
+/* Record transaction */
+void recordTransaction(int accNo, char type[],
+                       double amount, double balance,
+                       int relatedAccount) {
+
+    FILE *fp = fopen(TRANSACTION_FILE, "ab");
+    struct Transaction t;
+
+    if (fp == NULL)
+        return;
+
+    t.accountNo = accNo;
+    strcpy(t.type, type);
+    t.amount = amount;
+    t.balance = balance;
+    t.relatedAccount = relatedAccount;
+
+    getDateTime(t.dateTime);
+
+    fwrite(&t, sizeof(struct Transaction), 1, fp);
+
+    fclose(fp);
+}
+
+/* Admin login */
+void adminLogin() {
+
+    char username[30];
+    char password[30];
+
+    printf("\n========== ADMIN LOGIN ==========\n");
+
+    printf("Username: ");
+    scanf("%s", username);
+
+    printf("Password: ");
+    scanf("%s", password);
+
+    if (strcmp(username, ADMIN_USER) == 0 &&
+        strcmp(password, ADMIN_PASS) == 0) {
+
+        printf("\nLogin successful!\n");
+        mainMenu();
+
+    } else {
+
+        printf("\nInvalid username or password!\n");
+    }
+}
+
+/* Create account */
+void createAccount() {
+
+    struct Account acc;
+    struct Account temp;
+
+    printf("\n========== CREATE ACCOUNT ==========\n");
+
+    printf("Enter Account Number: ");
+    scanf("%d", &acc.accountNo);
+
+    if (getAccount(acc.accountNo, &temp)) {
+        printf("\nAccount already exists!\n");
+        return;
+    }
+
+    clearInput();
+
+    printf("Enter Customer Name: ");
+    fgets(acc.name, sizeof(acc.name), stdin);
+    acc.name[strcspn(acc.name, "\n")] = '\0';
+
+    printf("Enter Phone Number: ");
+    scanf("%s", acc.phone);
+
+    clearInput();
+
+    printf("Enter Address: ");
+    fgets(acc.address, sizeof(acc.address), stdin);
+    acc.address[strcspn(acc.address, "\n")] = '\0';
+
+    printf("Enter Account Type (Savings/Current): ");
+    scanf("%s", acc.accountType);
+
+    printf("Create 4-digit PIN: ");
+    scanf("%d", &acc.pin);
+
+    if (acc.pin < 1000 || acc.pin > 9999) {
+        printf("\nPIN must contain exactly 4 digits!\n");
+        return;
+    }
+
+    printf("Enter Initial Deposit: ");
+    scanf("%lf", &acc.balance);
+
+    if (acc.balance < 500) {
+        printf("\nMinimum initial deposit is Rs.500\n");
+        return;
+    }
+
+    acc.active = 1;
+
+    saveAccount(acc);
+
+    recordTransaction(
+        acc.accountNo,
+        "OPEN",
+        acc.balance,
+        acc.balance,
+        0
+    );
+
+    printf("\nAccount created successfully!\n");
+    printf("Account Number: %d\n", acc.accountNo);
+}
+
+/* Display all accounts */
+void displayAllAccounts() {
+
+    FILE *fp = fopen(ACCOUNT_FILE, "rb");
+    struct Account acc;
+
+    if (fp == NULL) {
+        printf("\nNo accounts found.\n");
+        return;
+    }
+
+    printf("\n================ ALL ACCOUNTS ================\n");
+
+    printf("%-10s %-20s %-15s %-12s %-12s\n",
+           "A/C No", "Name", "Phone", "Type", "Balance");
+
+    printf("---------------------------------------------------------------\n");
+
+    while (fread(&acc, sizeof(struct Account), 1, fp)) {
+
+        if (acc.active == 1) {
+
+            printf("%-10d %-20s %-15s %-12s Rs.%-10.2lf\n",
+                   acc.accountNo,
+                   acc.name,
+                   acc.phone,
+                   acc.accountType,
+                   acc.balance);
+        }
+    }
+
+    fclose(fp);
+}
+
+/* Search account */
+void searchAccount() {
+
+    int accountNo;
+    struct Account acc;
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    if (!getAccount(accountNo, &acc)) {
+
+        printf("\nAccount not found!\n");
+        return;
+    }
+
+    printf("\n========== ACCOUNT DETAILS ==========\n");
+
+    printf("Account Number : %d\n", acc.accountNo);
+    printf("Name           : %s\n", acc.name);
+    printf("Phone          : %s\n", acc.phone);
+    printf("Address        : %s\n", acc.address);
+    printf("Account Type   : %s\n", acc.accountType);
+    printf("Balance        : Rs. %.2lf\n", acc.balance);
+}
+
+/* Customer login */
+int customerLogin(int *accountNo) {
+
+    int accNo;
+    int pin;
+    struct Account acc;
+
+    printf("\n========== CUSTOMER LOGIN ==========\n");
+
+    printf("Account Number: ");
+    scanf("%d", &accNo);
+
+    printf("PIN: ");
+    scanf("%d", &pin);
+
+    if (!getAccount(accNo, &acc)) {
+        printf("\nAccount not found!\n");
+        return 0;
+    }
+
+    if (acc.pin != pin) {
+        printf("\nIncorrect PIN!\n");
+        return 0;
+    }
+
+    *accountNo = accNo;
+
+    printf("\nLogin successful. Welcome, %s!\n", acc.name);
+
+    return 1;
+}
+
+/* Deposit */
+void depositMoney() {
+
+    int accountNo;
+    double amount;
+    struct Account acc;
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    if (!getAccount(accountNo, &acc)) {
+        printf("\nAccount not found!\n");
+        return;
+    }
+
+    printf("Enter Deposit Amount: ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0) {
+        printf("\nInvalid amount!\n");
+        return;
+    }
+
+    acc.balance += amount;
+
+    updateAccountFile(acc);
+
+    recordTransaction(
+        accountNo,
+        "DEPOSIT",
+        amount,
+        acc.balance,
+        0
+    );
+
+    printf("\nDeposit successful!\n");
+    printf("New Balance: Rs. %.2lf\n", acc.balance);
+}
+
+/* Withdraw */
+void withdrawMoney() {
+
+    int accountNo;
+    double amount;
+    struct Account acc;
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    if (!getAccount(accountNo, &acc)) {
+        printf("\nAccount not found!\n");
+        return;
+    }
+
+    printf("Enter Withdrawal Amount: ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0) {
+        printf("\nInvalid amount!\n");
+        return;
+    }
+
+    if (amount > acc.balance) {
+        printf("\nInsufficient balance!\n");
+        return;
+    }
+
+    if (acc.balance - amount < 500) {
+        printf("\nMinimum balance of Rs.500 must be maintained!\n");
+        return;
+    }
+
+    acc.balance -= amount;
+
+    updateAccountFile(acc);
+
+    recordTransaction(
+        accountNo,
+        "WITHDRAW",
+        amount,
+        acc.balance,
+        0
+    );
+
+    printf("\nWithdrawal successful!\n");
+    printf("Remaining Balance: Rs. %.2lf\n", acc.balance);
+}
+
+/* Transfer money */
+void transferMoney() {
+
+    int fromAccount;
+    int toAccount;
+    double amount;
+
+    struct Account sender;
+    struct Account receiver;
+
+    printf("\n========== FUND TRANSFER ==========\n");
+
+    printf("Sender Account Number: ");
+    scanf("%d", &fromAccount);
+
+    printf("Receiver Account Number: ");
+    scanf("%d", &toAccount);
+
+    if (fromAccount == toAccount) {
+        printf("\nCannot transfer to the same account!\n");
+        return;
+    }
+
+    if (!getAccount(fromAccount, &sender)) {
+        printf("\nSender account not found!\n");
+        return;
+    }
+
+    if (!getAccount(toAccount, &receiver)) {
+        printf("\nReceiver account not found!\n");
+        return;
+    }
+
+    printf("Enter Transfer Amount: ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0) {
+        printf("\nInvalid amount!\n");
+        return;
+    }
+
+    if (amount > sender.balance) {
+        printf("\nInsufficient balance!\n");
+        return;
+    }
+
+    if (sender.balance - amount < 500) {
+        printf("\nMinimum balance of Rs.500 must remain!\n");
+        return;
+    }
+
+    sender.balance -= amount;
+    receiver.balance += amount;
+
+    updateAccountFile(sender);
+    updateAccountFile(receiver);
+
+    recordTransaction(
+        sender.accountNo,
+        "TRANSFER OUT",
+        amount,
+        sender.balance,
+        receiver.accountNo
+    );
+
+    recordTransaction(
+        receiver.accountNo,
+        "TRANSFER IN",
+        amount,
+        receiver.balance,
+        sender.accountNo
+    );
+
+    printf("\nTransfer successful!\n");
+    printf("Transferred: Rs. %.2lf\n", amount);
+}
+
+/* Check balance */
+void checkBalance() {
+
+    int accountNo;
+    struct Account acc;
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    if (!getAccount(accountNo, &acc)) {
+        printf("\nAccount not found!\n");
+        return;
+    }
+
+    printf("\nAccount Holder : %s\n", acc.name);
+    printf("Account Number : %d\n", acc.accountNo);
+    printf("Balance        : Rs. %.2lf\n", acc.balance);
+}
+
+/* Transaction history */
+void transactionHistory() {
+
+    int accountNo;
+    struct Transaction t;
+    int found = 0;
+
+    FILE *fp = fopen(TRANSACTION_FILE, "rb");
+
+    if (fp == NULL) {
+        printf("\nNo transaction history available.\n");
+        return;
+    }
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    printf("\n================ TRANSACTION HISTORY ================\n");
+
+    printf("%-20s %-15s %-15s %-15s\n",
+           "Date & Time",
+           "Type",
+           "Amount",
+           "Balance");
+
+    printf("-------------------------------------------------------------\n");
+
+    while (fread(&t, sizeof(struct Transaction), 1, fp)) {
+
+        if (t.accountNo == accountNo) {
+
+            printf("%-20s %-15s Rs.%-12.2lf Rs.%-12.2lf\n",
+                   t.dateTime,
+                   t.type,
+                   t.amount,
+                   t.balance);
+
+            found = 1;
+        }
+    }
+
+    if (!found)
+        printf("No transactions found.\n");
+
+    fclose(fp);
+}
+
+/* Update account */
+void updateAccount() {
+
+    int accountNo;
+    struct Account acc;
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    if (!getAccount(accountNo, &acc)) {
+        printf("\nAccount not found!\n");
+        return;
+    }
+
+    clearInput();
+
+    printf("Enter New Name: ");
+    fgets(acc.name, sizeof(acc.name), stdin);
+    acc.name[strcspn(acc.name, "\n")] = '\0';
+
+    printf("Enter New Phone: ");
+    scanf("%s", acc.phone);
+
+    clearInput();
+
+    printf("Enter New Address: ");
+    fgets(acc.address, sizeof(acc.address), stdin);
+    acc.address[strcspn(acc.address, "\n")] = '\0';
+
+    updateAccountFile(acc);
+
+    printf("\nAccount updated successfully!\n");
+}
+
+/* Delete account */
+void deleteAccount() {
+
+    int accountNo;
+    struct Account acc;
+
+    printf("\nEnter Account Number: ");
+    scanf("%d", &accountNo);
+
+    if (!getAccount(accountNo, &acc)) {
+        printf("\nAccount not found!\n");
+        return;
+    }
+
+    if (acc.balance > 0) {
+        printf("\nAccount cannot be deleted while balance is greater than zero.\n");
+        return;
+    }
+
+    acc.active = 0;
+
+    updateAccountFile(acc);
+
+    printf("\nAccount deleted successfully!\n");
+}
+
+/* Customer menu */
+void customerMenu(int accountNo) {
+
+    int choice;
+    struct Account acc;
+
+    while (1) {
+
+        printf("\n\n========== CUSTOMER MENU ==========\n");
+        printf("1. Check Balance\n");
+        printf("2. Deposit Money\n");
+        printf("3. Withdraw Money\n");
+        printf("4. Transfer Money\n");
+        printf("5. Transaction History\n");
+        printf("6. Logout\n");
+
+        printf("Enter Choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+
+            case 1:
+                if (getAccount(accountNo, &acc))
+                    printf("\nCurrent Balance: Rs. %.2lf\n",
+                           acc.balance);
+                break;
+
+            case 2:
+                depositMoney();
+                break;
+
+            case 3:
+                withdrawMoney();
+                break;
+
+            case 4:
+                transferMoney();
+                break;
+
+            case 5:
+                transactionHistory();
+                break;
+
+            case 6:
+                printf("\nLogged out successfully.\n");
+                return;
+
+            default:
+                printf("\nInvalid choice!\n");
+        }
+    }
+}
+
+/* Admin menu */
+void mainMenu() {
+
+    int choice;
+
+    while (1) {
+
+        printf("\n\n============================================\n");
+        printf("       BANKING MANAGEMENT SYSTEM\n");
+        printf("============================================\n");
+
+        printf("1. Create Account\n");
+        printf("2. Display All Accounts\n");
+        printf("3. Search Account\n");
+        printf("4. Deposit Money\n");
+        printf("5. Withdraw Money\n");
+        printf("6. Transfer Money\n");
+        printf("7. Check Balance\n");
+        printf("8. Transaction History\n");
+        printf("9. Update Account\n");
+        printf("10. Delete Account\n");
+        printf("11. Logout\n");
+
+        printf("\nEnter Choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+
+            case 1:
+                createAccount();
+                break;
+
+            case 2:
+                displayAllAccounts();
+                break;
+
+            case 3:
+                searchAccount();
+                break;
+
+            case 4:
+                depositMoney();
+                break;
+
+            case 5:
+                withdrawMoney();
+                break;
+
+            case 6:
+                transferMoney();
+                break;
+
+            case 7:
+                checkBalance();
+                break;
+
+            case 8:
+                transactionHistory();
+                break;
+
+            case 9:
+                updateAccount();
+                break;
+
+            case 10:
+                deleteAccount();
+                break;
+
+            case 11:
+                return;
+
+            default:
+                printf("\nInvalid choice!\n");
+        }
+    }
+}
+
+/* Main */
+int main() {
+
+    int choice;
+    int accountNo;
+
+    while (1) {
+
+        printf("\n\n********************************************\n");
+        printf("       ADVANCED BANKING SYSTEM\n");
+        printf("********************************************\n");
+
+        printf("1. Admin Login\n");
+        printf("2. Customer Login\n");
+        printf("3. Exit\n");
+
+        printf("\nEnter Choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+
+            case 1:
+                adminLogin();
+                break;
+
+            case 2:
+                if (customerLogin(&accountNo))
+                    customerMenu(accountNo);
+                break;
+
+            case 3:
+                printf("\nThank you for using our Banking System!\n");
+                exit(0);
+
+            default:
+                printf("\nInvalid choice!\n");
+        }
+    }
+
+    return 0;
+}
+
