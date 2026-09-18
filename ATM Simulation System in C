@@ -1,0 +1,432 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define MAX_TRANSACTIONS 100
+
+typedef struct {
+    int accountNumber;
+    char name[50];
+    int pin;
+    double balance;
+} Account;
+
+typedef struct {
+    char type[20];
+    double amount;
+    double balanceAfter;
+    char date[30];
+} Transaction;
+
+/* Function declarations */
+void displayMenu();
+int authenticate(Account *account);
+void balanceEnquiry(Account *account);
+void withdraw(Account *account, Transaction transactions[], int *count);
+void deposit(Account *account, Transaction transactions[], int *count);
+void changePin(Account *account);
+void miniStatement(Transaction transactions[], int count);
+void addTransaction(Transaction transactions[], int *count,
+                    const char *type, double amount, double balance);
+void saveAccount(Account *account);
+void loadAccount(Account *account);
+void saveTransactions(Transaction transactions[], int count);
+void loadTransactions(Transaction transactions[], int *count);
+
+int main() {
+    Account account;
+    Transaction transactions[MAX_TRANSACTIONS];
+
+    int transactionCount = 0;
+    int choice;
+
+    /* Default account */
+    account.accountNumber = 1001001;
+    strcpy(account.name, "Satya Brato Dutta");
+    account.pin = 1234;
+    account.balance = 25000.00;
+
+    /* Load saved data */
+    loadAccount(&account);
+    loadTransactions(transactions, &transactionCount);
+
+    printf("\n====================================\n");
+    printf("        WELCOME TO ATM SYSTEM       \n");
+    printf("====================================\n");
+
+    printf("\nAccount Number: %d\n", account.accountNumber);
+
+    if (!authenticate(&account)) {
+        printf("\nToo many incorrect attempts.\n");
+        printf("Your card has been blocked temporarily.\n");
+        return 0;
+    }
+
+    do {
+        displayMenu();
+
+        printf("\nEnter your choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+
+            case 1:
+                balanceEnquiry(&account);
+                break;
+
+            case 2:
+                withdraw(&account, transactions, &transactionCount);
+                break;
+
+            case 3:
+                deposit(&account, transactions, &transactionCount);
+                break;
+
+            case 4:
+                changePin(&account);
+                break;
+
+            case 5:
+                miniStatement(transactions, transactionCount);
+                break;
+
+            case 6:
+                saveAccount(&account);
+                saveTransactions(transactions, transactionCount);
+
+                printf("\nThank you for using our ATM.\n");
+                printf("Please collect your card.\n");
+                break;
+
+            default:
+                printf("\nInvalid choice! Please try again.\n");
+        }
+
+    } while (choice != 6);
+
+    return 0;
+}
+
+/* Display ATM menu */
+void displayMenu() {
+    printf("\n====================================\n");
+    printf("             ATM MENU               \n");
+    printf("====================================\n");
+    printf("1. Balance Enquiry\n");
+    printf("2. Withdraw Cash\n");
+    printf("3. Deposit Cash\n");
+    printf("4. Change PIN\n");
+    printf("5. Mini Statement\n");
+    printf("6. Exit\n");
+    printf("====================================\n");
+}
+
+/* PIN authentication */
+int authenticate(Account *account) {
+    int enteredPin;
+    int attempts = 0;
+
+    while (attempts < 3) {
+
+        printf("\nEnter your 4-digit PIN: ");
+        scanf("%d", &enteredPin);
+
+        if (enteredPin == account->pin) {
+            printf("\nLogin successful!");
+            printf("\nWelcome, %s!\n", account->name);
+            return 1;
+        }
+
+        attempts++;
+
+        printf("Incorrect PIN!");
+
+        if (attempts < 3) {
+            printf(" Attempts remaining: %d\n", 3 - attempts);
+        }
+    }
+
+    return 0;
+}
+
+/* Balance enquiry */
+void balanceEnquiry(Account *account) {
+    printf("\n------------------------------------\n");
+    printf("          BALANCE ENQUIRY           \n");
+    printf("------------------------------------\n");
+    printf("Available Balance: Rs. %.2lf\n", account->balance);
+    printf("------------------------------------\n");
+}
+
+/* Withdraw money */
+void withdraw(Account *account,
+              Transaction transactions[],
+              int *count) {
+
+    double amount;
+
+    printf("\nEnter withdrawal amount: Rs. ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0) {
+        printf("\nInvalid amount!\n");
+        return;
+    }
+
+    if ((int)amount % 100 != 0) {
+        printf("\nPlease enter amount in multiples of Rs. 100.\n");
+        return;
+    }
+
+    if (amount > 10000) {
+        printf("\nDaily withdrawal limit is Rs. 10,000.\n");
+        return;
+    }
+
+    if (amount > account->balance) {
+        printf("\nInsufficient balance!\n");
+        return;
+    }
+
+    account->balance -= amount;
+
+    addTransaction(
+        transactions,
+        count,
+        "Withdrawal",
+        amount,
+        account->balance
+    );
+
+    saveAccount(account);
+    saveTransactions(transactions, *count);
+
+    printf("\nPlease collect your cash.");
+    printf("\nWithdrawal successful!");
+    printf("\nRemaining Balance: Rs. %.2lf\n",
+           account->balance);
+}
+
+/* Deposit money */
+void deposit(Account *account,
+             Transaction transactions[],
+             int *count) {
+
+    double amount;
+
+    printf("\nEnter deposit amount: Rs. ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0) {
+        printf("\nInvalid amount!\n");
+        return;
+    }
+
+    account->balance += amount;
+
+    addTransaction(
+        transactions,
+        count,
+        "Deposit",
+        amount,
+        account->balance
+    );
+
+    saveAccount(account);
+    saveTransactions(transactions, *count);
+
+    printf("\nDeposit successful!");
+    printf("\nUpdated Balance: Rs. %.2lf\n",
+           account->balance);
+}
+
+/* Change PIN */
+void changePin(Account *account) {
+
+    int oldPin;
+    int newPin;
+    int confirmPin;
+
+    printf("\nEnter current PIN: ");
+    scanf("%d", &oldPin);
+
+    if (oldPin != account->pin) {
+        printf("\nIncorrect current PIN!\n");
+        return;
+    }
+
+    printf("Enter new 4-digit PIN: ");
+    scanf("%d", &newPin);
+
+    if (newPin < 1000 || newPin > 9999) {
+        printf("\nPIN must contain exactly 4 digits.\n");
+        return;
+    }
+
+    printf("Confirm new PIN: ");
+    scanf("%d", &confirmPin);
+
+    if (newPin != confirmPin) {
+        printf("\nPIN confirmation does not match!\n");
+        return;
+    }
+
+    account->pin = newPin;
+
+    saveAccount(account);
+
+    printf("\nPIN changed successfully!\n");
+}
+
+/* Add transaction */
+void addTransaction(Transaction transactions[],
+                    int *count,
+                    const char *type,
+                    double amount,
+                    double balance) {
+
+    if (*count >= MAX_TRANSACTIONS) {
+        printf("\nTransaction history is full.\n");
+        return;
+    }
+
+    strcpy(transactions[*count].type, type);
+    transactions[*count].amount = amount;
+    transactions[*count].balanceAfter = balance;
+
+    time_t now = time(NULL);
+
+    strcpy(
+        transactions[*count].date,
+        ctime(&now)
+    );
+
+    /* Remove newline */
+    transactions[*count].date[
+        strcspn(transactions[*count].date, "\n")
+    ] = '\0';
+
+    (*count)++;
+}
+
+/* Mini statement */
+void miniStatement(Transaction transactions[],
+                   int count) {
+
+    int i;
+
+    printf("\n================================================\n");
+    printf("                MINI STATEMENT                  \n");
+    printf("================================================\n");
+
+    if (count == 0) {
+        printf("No transactions available.\n");
+        return;
+    }
+
+    printf("%-15s %-12s %-15s %-25s\n",
+           "Type",
+           "Amount",
+           "Balance",
+           "Date");
+
+    printf("------------------------------------------------\n");
+
+    for (i = 0; i < count; i++) {
+
+        printf("%-15s Rs.%-9.2lf Rs.%-11.2lf %-25s\n",
+               transactions[i].type,
+               transactions[i].amount,
+               transactions[i].balanceAfter,
+               transactions[i].date);
+    }
+
+    printf("================================================\n");
+}
+
+/* Save account information */
+void saveAccount(Account *account) {
+
+    FILE *file;
+
+    file = fopen("account.dat", "wb");
+
+    if (file == NULL) {
+        printf("\nError saving account data!\n");
+        return;
+    }
+
+    fwrite(account, sizeof(Account), 1, file);
+
+    fclose(file);
+}
+
+/* Load account information */
+void loadAccount(Account *account) {
+
+    FILE *file;
+
+    file = fopen("account.dat", "rb");
+
+    if (file == NULL) {
+        return;
+    }
+
+    fread(account, sizeof(Account), 1, file);
+
+    fclose(file);
+}
+
+/* Save transactions */
+void saveTransactions(Transaction transactions[],
+                      int count) {
+
+    FILE *file;
+
+    file = fopen("transactions.dat", "wb");
+
+    if (file == NULL) {
+        printf("\nError saving transactions!\n");
+        return;
+    }
+
+    fwrite(&count, sizeof(int), 1, file);
+
+    fwrite(
+        transactions,
+        sizeof(Transaction),
+        count,
+        file
+    );
+
+    fclose(file);
+}
+
+/* Load transactions */
+void loadTransactions(Transaction transactions[],
+                      int *count) {
+
+    FILE *file;
+
+    file = fopen("transactions.dat", "rb");
+
+    if (file == NULL) {
+        return;
+    }
+
+    fread(count, sizeof(int), 1, file);
+
+    if (*count > MAX_TRANSACTIONS) {
+        *count = MAX_TRANSACTIONS;
+    }
+
+    fread(
+        transactions,
+        sizeof(Transaction),
+        *count,
+        file
+    );
+
+    fclose(file);
+}
